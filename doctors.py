@@ -1,9 +1,8 @@
-# -*- coding: utf-8 -*-
-import scrapy
-from scrapy.utils.response import open_in_browser
 import urlparse
+import scrapy
+import re
 
-
+"""A scrapy spider that scrapes uclahealth.org for information of doctors."""
 class DoctorsSpider(scrapy.Spider):
     name = 'doctors'
     allowed_domains = ['www.uclahealth.org']
@@ -22,19 +21,30 @@ class DoctorsSpider(scrapy.Spider):
     doctor_tab_name_selector = './a/text()'
     doctor_about_tab_text_selector = '//div[@id=$val]/dl/dd/p/text()'
     doctor_other_tabs_text_selector = '//div[@id=$val]/text()'
-    # params
+
+    form_name = 'form_search'
+
+    # Search form param names
     name_search_param = 'limit_FullName'
     name_toggle_param = 'fullname_search'
     page_no_param = 'pageno'
 
-    count = None
+    # Search form param values
+    name_search_value = 'a'
+    name_toggle_value = 'true'
+
+    # Pagination variables
+    count = 0
     current_page = 1
 
     def parse(self, response):
-        formname = 'form_search'
+        """Performs search by doctor's fullname with the params name_search and name_toggle.
+        Passes on the response to doctors_list().
+        """
+        formname = self.form_name
         formdata = {
-            self.name_search_param: 'a',
-            self.name_toggle_param: 'true',
+            self.name_search_param: self.name_search_value,
+            self.name_toggle_param: self.name_toggle_value,
         }
 
         yield scrapy.FormRequest.from_response(response,
@@ -42,28 +52,33 @@ class DoctorsSpider(scrapy.Spider):
                                                formdata=formdata,
                                                callback=self.doctors_list)
 
+
+    def number_of_pages(self, page_results):
+        """takes string of form 'Showing A - B of C, and returns ciel value of C / (B - A)."""        
+        page_results = re.findall('\d+', page_results)
+        return -(-int(page_results[2]) // (int(page_results[1]) - int(page_results[0])))
+
     def doctors_list(self, response):
+        """Makes request with callback 'parse_doctors' for each doctor on the current page.
+        Calculates total number of pages on first call.
+        Makes form search request with itself as callback for each page.
+        """
 
         for url in response.css(self.doctor_url_selector).extract():
             url = urlparse.urljoin(self.site_url, url)
             yield scrapy.Request(url=url, callback=self.parse_doctors)
 
-        if self.count is None:
-            def ceil_div(a, b):
-                return -(-a // b)
-
+        if self.count == 0:
             page_results = response.css(
                 self.page_results_selector).extract_first()
-            page_results = page_results.split(' ')
-
-            self.count = ceil_div(int(page_results[-1]), 10)
+            self.count = self.number_of_pages(page_results)
 
         if self.current_page <= self.count:
             self.current_page += 1
-            formname = 'form_search'
+            formname = self.form_name
             formdata = {
-                self.name_search_param: 'a',
-                self.name_toggle_param: 'true',
+                self.name_search_param: self.name_search_value,
+                self.name_toggle_param: self.name_toggle_value,
                 self.page_no_param: str(self.current_page)
             }
             yield scrapy.FormRequest.from_response(response,
@@ -72,8 +87,9 @@ class DoctorsSpider(scrapy.Spider):
                                                    callback=self.doctors_list)
 
     def parse_doctors(self, response):
-        doctor = {}
+        """Parses doctor details and yields a dictionary."""
 
+        doctor = {}
         name = response.css(self.doctor_name_selector).extract_first()
         doctor[name] = {}
         details = response.css(self.doctor_detail_selector)
