@@ -2,8 +2,9 @@ import urlparse
 import scrapy
 import re
 
-"""A scrapy spider that scrapes uclahealth.org for information of doctors."""
 class DoctorsSpider(scrapy.Spider):
+    """A scrapy spider that scrapes uclahealth.org for information of doctors."""
+    
     name = 'doctors'
     allowed_domains = ['www.uclahealth.org']
     url = 'https://www.uclahealth.org/body.cfm?id=10&amp;action=list&fullname_search=true&amp;sortby=name&amp;pageno=1&amp;view=list'
